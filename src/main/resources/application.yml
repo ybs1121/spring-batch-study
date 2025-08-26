@@ -10,3 +10,6 @@ spring:
       console:
         enabled: true    # H2 ? ?? ??(????)
         path: /h2-console
+  batch:
+    job:
+      enabled: false
