@@ -111,3 +111,83 @@ Spring Batch 데이터 처리의 핵심은 아래 3가지 컴포넌트입니다.
 
 
 
+## JobParameter 및 스코프 개념 정리
+
+### 1. JobParameter란?
+- 배치 작업에 전달되는 입력값으로, 배치 실행 시 어떤 조건이나 데이터를 다룰지 결정함
+- 동일한 Job을 다양한 파라미터로 유연하게 실행 가능
+- 정적인 프로퍼티 값과 달리 실행 중 동적 변경 가능
+- 모든 JobParameter는 메타데이터 저장소에 기록되어, Job 인스턴스 식별 및 재시작 처리, 실행 이력 추적 기능 제공
+
+### 2. 커맨드라인에서 JobParameter 전달 예시
+./gradlew bootRun --args='--spring.batch.job.name=dataProcessingJob inputFilePath=/data/input/users.csv,java.lang.String'
+
+### 3. JobParameter 기본 표기법
+parameterName=parameterValue,parameterType,identificationFlag
+
+- parameterName: 파라미터 키 (Job 내 접근용)
+- parameterValue: 실제 값
+- parameterType: 타입 (예: java.lang.String, java.lang.Integer), 생략 시 String으로 간주
+- identificationFlag: Job 인스턴스 식별용 여부 (true/false), 기본값 true
+
+### 4. JSON 기반 표기법 (Spring Batch 5 이상)
+- 쉼표 등 구분자가 포함된 값 처리 문제 해결
+- 예시:  
+  infiltrationTargets='{"value": "판교_서버실,안산_데이터센터", "type": "java.lang.String"}'
+
+### 5. JobParameter 프로그래밍 방식 생성 예시
+JobParameters jobParameters = new JobParametersBuilder()
+.addJobParameter("inputFilePath", "/data/input/users.csv", String.class)
+.toJobParameters();
+
+jobLauncher.run(dataProcessingJob, jobParameters);
+
+### 6. Job과 Step의 Scope
+
+#### JobScope와 StepScope 개념
+- 두 스코프는 Job 실행 시점에 빈이 생성되어 실행 종료 시 소멸됨 (지연 생성)
+- 런타임에 전달된 동적 JobParameter를 빈에 주입 가능
+- 여러 Job/Step 동시 실행 시 각각 독립적인 빈 인스턴스 사용해 동시성 문제 방지
+
+#### 예시 - @StepScope 활용 Tasklet
+@Bean
+@StepScope
+public Tasklet systemInfiltrationTasklet(@Value("#{jobParameters['infiltrationTargets']}") String infiltrationTargets) {
+// 매 Step 실행마다 새 인스턴스 생성, 파라미터 주입
+}
+
+#### 주의사항
+- Step 빈에는 @JobScope, @StepScope 사용 권장하지 않음 (스코프 활성화 시점 문제로 오류 발생)
+- 대신 Tasklet, Reader, Writer 등 컴포넌트에 스코프 선언하여 파라미터 주입
+- 스코프 대상 클래스는 반드시 상속 가능해야 함 (프록시 생성 관련)
+
+### 7. ExecutionContext란?
+- Job/Step 실행 중 상태를 저장하는 key-value 저장소
+- 배치 중단 시 상태 복원 및 Step 간 데이터 공유 가능
+- JobExecutionContext와 StepExecutionContext는 범위가 다름
+    - jobExecutionContext: Job 전체에서 접근 가능
+    - stepExecutionContext: 해당 Step 내에서만 접근 가능
+
+#### ExecutionContext 주입 예시
+@Bean
+@JobScope
+public Tasklet taskletWithJobContext(@Value("#{jobExecutionContext['previousState']}") String prevState) { ... }
+
+@Bean
+@StepScope
+public Tasklet taskletWithStepContext(@Value("#{stepExecutionContext['currentStatus']}") String currStatus) { ... }
+
+#### 데이터 접근 제한과 공유 방법
+- StepExecutionContext는 다른 Step에서 접근 불가 (독립성 보장)
+- Step 간 데이터 공유 필요 시 JobExecutionContext 활용
+
+---
+
+### 요약
+- JobParameter: 배치 실행 시 입력 데이터로서, 동적 파라미터를 지원하고 식별 및 재시작 관리를 돕는다.
+- JobScope & StepScope: 실행 시점에 동적으로 빈을 생성해 파라미터 주입과 동시성 문제 해결에 유용하다.
+- ExecutionContext: 배치 실행 중 상태를 저장하고 재시작 및 Step 간 데이터 공유에 활용되는 key-value 저장소이다.
+
+---
+
+이 내용을 통해 JobParameter와 배치 실행 시 스코프 및 상태 관리를 쉽고 안전하게 활용할 수 있습니다.

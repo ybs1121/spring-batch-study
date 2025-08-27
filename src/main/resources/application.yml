@@ -12,4 +12,13 @@ spring:
         path: /h2-console
   batch:
     job:
-      enabled: false
+      enabled: true
+      name: terminatorJob
+  main:
+    allow-bean-definition-overriding: true #권장 X
+logging:
+  level:
+    root: info
+    com:
+      system:
+        batch: info
