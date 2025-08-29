@@ -191,3 +191,79 @@ public Tasklet taskletWithStepContext(@Value("#{stepExecutionContext['currentSta
 ---
 
 이 내용을 통해 JobParameter와 배치 실행 시 스코프 및 상태 관리를 쉽고 안전하게 활용할 수 있습니다.
+
+Spring Batch Listener 개념 정리
+
+Spring Batch Listener는 배치 처리 과정에서 특정 이벤트가 발생할 때 이를 감지하고 원하는 작업을 수행하게 해주는 기능입니다.
+Job 시작/끝, Step 실행 전/후, 청크 단위 및 아이템 단위 처리 전후 등 다양한 시점에 개입해서 로깅, 모니터링, 에러 처리 등 부가적인 작업을 할 수 있습니다.
+
+1. JobExecutionListener
+- Job이 시작될 때와 끝날 때 호출됩니다.
+- 예를 들어, 작업 시작 전에 준비가 필요한 자원을 마련하거나, 작업 끝난 후 결과를 이메일로 보내는 등의 일을 할 수 있습니다.
+- afterJob() 메서드는 작업 결과가 저장되기 전에 호출되어 작업 상태를 바꾸는 것도 가능합니다.
+
+JobExecutionListener 예시 코드:
+
+    public interface JobExecutionListener {
+    default void beforeJob(JobExecution jobExecution) { }
+    default void afterJob(JobExecution jobExecution) { }
+    }
+
+2. StepExecutionListener
+- Step 실행 전과 후에 호출됩니다.
+- Step이 언제 시작하고 끝났는지, 몇 개의 데이터를 처리했는지 기록할 때 사용합니다.
+
+StepExecutionListener 예시 코드:
+
+    public interface StepExecutionListener extends StepListener {
+    default void beforeStep(StepExecution stepExecution) { }
+    default ExitStatus afterStep(StepExecution stepExecution) { return null; }
+    }
+
+3. ChunkListener
+- 청크 단위 작업(작은 데이터 묶음 처리)이 시작되기 전, 끝난 후, 또는 오류가 발생했을 때 호출됩니다.
+- 청크 처리를 모니터링하거나 오류 발생 시 알림을 보낼 때 사용합니다.
+
+ChunkListener 예시 코드:
+public interface ChunkListener extends StepListener {
+default void beforeChunk(ChunkContext context) { }
+default void afterChunk(ChunkContext context) { }
+default void afterChunkError(ChunkContext context) { }
+}
+
+4. ItemReadListener, ItemProcessListener, ItemWriteListener
+- 각각 데이터 읽기, 처리, 쓰기 작업 전후 및 에러 시점에 호출됩니다.
+
+ItemReadListener 예시 코드:
+
+    public interface ItemReadListener<T> extends StepListener {
+    default void beforeRead() { }
+    default void afterRead(T item) { }
+    default void onReadError(Exception ex) { }
+    }
+
+ItemProcessListener 예시 코드:
+
+    public interface ItemProcessListener<T, S> extends StepListener {
+    default void beforeProcess(T item) { }
+    default void afterProcess(T item, S result) { }
+    default void onProcessError(T item, Exception e) { }
+    }
+
+ItemWriteListener 예시 코드:
+
+    public interface ItemWriteListener<S> extends StepListener {
+    default void beforeWrite(Chunk<? extends S> items) { }
+    default void afterWrite(Chunk<? extends S> items) { }
+    default void onWriteError(Exception exception, Chunk<? extends S> items) { }
+    }
+
+- ItemReadListener.afterRead()는 데이터가 더 이상 없으면 호출되지 않습니다.
+- ItemProcessListener.afterProcess()는 필터링을 위해 null을 반환해도 호출됩니다.
+- ItemWriteListener.afterWrite()는 트랜잭션 커밋 전에 실행됩니다.
+
+배치 리스너 활용 장점
+- 단계별 실행 시간과 처리 데이터 수 등 상태를 정확히 기록할 수 있습니다.
+- 작업 종료 상태를 확인하고 결과에 따라 자동 후속 작업을 할 수 있습니다.
+- 작업 도중 데이터를 가공하거나 다음 단계에 전달할 정보를 준비할 수 있습니다.
+- 오류 발생 시 관리자 알림 등 부가 작업을 별도로 분리해 처리할 수 있습니다.
