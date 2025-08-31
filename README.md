@@ -267,3 +267,155 @@ ItemWriteListener 예시 코드:
 - 작업 종료 상태를 확인하고 결과에 따라 자동 후속 작업을 할 수 있습니다.
 - 작업 도중 데이터를 가공하거나 다음 단계에 전달할 정보를 준비할 수 있습니다.
 - 오류 발생 시 관리자 알림 등 부가 작업을 별도로 분리해 처리할 수 있습니다.
+
+
+왜 JobParameters가 아닌 ExecutionContext를 사용할까?
+
+- JobParameters는 한 번 생성되면 변경할 수 없다.
+- Spring Batch의 핵심 철학은 배치 작업이 재현 가능하고 일관성을 유지하는 것인데,
+  이를 위해 JobParameters는 불변(immutable)하도록 설계되었다.
+- 재현 가능성: 같은 JobParameters로 실행된 작업은 항상 똑같은 결과를 내야 한다.
+  실행 중에 JobParameters가 바뀌면 그걸 보장할 수 없다.
+- 추적 가능성: 실행 기록과 JobParameters는 메타데이터 저장소에 저장되는데,
+  변경 가능하면 기록과 작업 결과가 달라질 수 있다.
+
+따라서 실행 중 동적으로 바뀌어야 하는 데이터는 ExecutionContext로 관리한다.
+
+잘못된 예 - ExecutionContext에 데이터를 하드코딩하지 말자
+@Override
+public void beforeJob(JobExecution jobExecution) {
+jobExecution.getExecutionContext().put("targetDate", LocalDate.now()); // 위험하다
+}
+
+- 이유: 만약 어제 데이터를 다시 처리하고 싶을 때, 수정하지 않으면 불가능하다.
+- 하드코딩된 방식은 배치의 유연성을 크게 떨어뜨린다.
+
+정답 - 외부에서 필요한 값을 JobParameters로 받자
+예시:
+./gradlew bootRun --args='--spring.batch.job.name=systemInfiltrationJob -date=2024-10-13'
+
+- 이렇게 하면 배치 작업이 유연해진다.
+- 대부분의 데이터는 JobParameters를 통해 외부에서 받는 것이 가장 안전하고 좋다.
+- ExecutionContext와 JobExecutionListener는 외부에서 파라미터를 받을 수 없을 때만 사용하자.
+
+---
+
+Step 간 데이터 공유 - ExecutionContextPromotionListener
+
+- Step 하나하나가 가진 ExecutionContext 데이터를 Job 수준 ExecutionContext로 올려주는 역할
+- 이를 ‘승격(Promotion)’이라고 하고, ExecutionContextPromotionListener가 이를 수행한다.
+- afterStep() 메서드에서 승격 작업을 한다.
+
+주의사항:
+- Step은 독립적으로 설계하는 게 좋다.
+- Step 간 데이터 의존성을 최소화해야 유지보수가 쉽고 복잡도가 덜해진다.
+
+---
+
+정리
+
+- JobParameters는 불변이라서 실행 중 변경할 수 없으니, 재현성 및 추적성을 보장한다.
+- 실행 중 동적이고 변경이 필요한 데이터는 ExecutionContext를 사용한다.
+- 데이터 값을 하드코딩하지 말고, 외부에서 JobParameters로 전달받자.
+- 여러 Step 간에 데이터를 공유할 때 ExecutionContextPromotionListener를 사용해 안전하게 처리하자.
+
+이렇게 하면 배치 작업은 유연하면서도 견고하고 유지보수가 쉬워진다.
+
+---
+파일 기반 배치 처리 시작하기
+---
+Spring Batch에서 파일 입출력을 다룰 때 가장 기본이 되는 무기는 FlatFileItemReader와 FlatFileItemWriter입니다. 이들을 이해하면 파일 기반 배치 처리의 흐름을 쉽게 잡을 수 있습니다.
+---
+FlatFileItemReader
+---
+FlatFileItemReader는 플랫 파일(CSV, TSV 등)을 한 줄씩 읽어 도메인 객체로 변환하는 리더입니다.
+
+동작 과정은 크게 두 단계로 나눌 수 있습니다.
+
+파일에서 한 줄을 읽는다
+
+읽은 문자열을 객체로 변환한다
+
+이 변환 과정의 핵심은 LineMapper입니다.
+
+LineMapper : 한 줄(String)을 객체로 변환
+interface LineMapper<T> {
+T mapLine(String line, int lineNumber) throws Exception;
+}
+
+LineTokenizer : 한 줄을 여러 필드로 분리
+
+FieldSetMapper : 분리된 필드를 객체 프로퍼티에 매핑
+
+Spring Batch 기본 구현체인 DefaultLineMapper는
+LineTokenizer → FieldSet → FieldSetMapper 순서로 처리하여 최종 객체를 생성합니다.
+
+즉,
+파일 한 줄 → 토큰화 → 객체 매핑 → 도메인 객체 반환
+
+간단 예시 (CSV → 객체 변환)
+
+CSV 데이터:
+1001,Kim,30
+
+처리 흐름:
+LineTokenizer → [1001][Kim][30]
+FieldSetMapper → Person(id, name, age)
+최종 반환 → new Person(1001, "Kim", 30)
+
+FlatFileItemWriter
+
+FlatFileItemWriter는 객체를 받아 문자열로 변환하고 파일에 기록합니다. (Reader의 반대 역할)
+
+핵심 컴포넌트는 LineAggregator입니다.
+
+LineAggregator : 객체를 문자열 한 줄로 변환
+interface LineAggregator<T> {
+String aggregate(T item);
+}
+
+간단 예시 (객체 → CSV 변환)
+
+객체: new Person(1001, "Kim", 30)
+LineAggregator → "1001,Kim,30"
+파일에 기록 → CSV 저장 완료
+
+MultiResourceItemReader
+
+여러 개의 파일을 순차적으로 읽어야 한다면 MultiResourceItemReader를 사용합니다.
+첫 번째 파일을 다 읽으면 → 두 번째 파일로 넘어가고 → 세 번째 파일로 이어지는 방식으로 동작합니다.
+
+구조 다이어그램
+FlatFileItemReader 동작 구조
+
+파일 한 줄
+↓
+LineTokenizer (문자열 → 토큰 분리)
+↓
+FieldSet (토큰 모음)
+↓
+FieldSetMapper (객체 매핑)
+↓
+도메인 객체 반환
+
+FlatFileItemWriter 동작 구조
+
+도메인 객체
+↓
+LineAggregator (객체 → 문자열 변환)
+↓
+파일 한 줄 기록
+
+MultiResourceItemReader 동작 구조
+
+File1 → 다 읽으면 → File2 → 다 읽으면 → File3 → ...
+
+정리
+
+FlatFileItemReader : 파일 → 객체 변환
+
+FlatFileItemWriter : 객체 → 파일 기록
+
+MultiResourceItemReader : 여러 파일을 순차적으로 처리
+
+핵심 개념과 예시만 이해해도 Spring Batch의 파일 기반 배치 처리를 쉽게 다룰 수 있습니다.
