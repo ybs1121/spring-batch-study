@@ -419,3 +419,66 @@ FlatFileItemWriter : 객체 → 파일 기록
 MultiResourceItemReader : 여러 파일을 순차적으로 처리
 
 핵심 개념과 예시만 이해해도 Spring Batch의 파일 기반 배치 처리를 쉽게 다룰 수 있습니다.
+
+---
+FlatFileItemWriter는 데이터를 플랫 파일 형식으로 쓰는 작업을 담당하는 컴포넌트다. 파일 포맷을 맞추고, 데이터를 한 줄씩 작성하며, 내부적으로 버퍼링을 통해 최적화하는 등의 저수준 작업을 직접 구현하지 않아도 된다.  
+작성 과정은 크게 두 단계로 나뉜다.
+
+--------------------------------------------------------
+필드 추출과 라인 결합
+
+1단계: FieldExtractor (필드 추출)
+- FieldExtractor 인터페이스는 도메인 객체에서 필요한 필드를 추출하는 역할을 한다.
+- 예를 들어, DeathNote 객체에서 이름과 사인을 배열 형태로 뽑아내는 식이다.
+- BeanWrapperFieldExtractor는 일반적인 Java Bean 객체에서 getter 메서드를 통해 필드를 추출하고, RecordFieldExtractor는 Java Record에서 필드를 추출한다.
+- 인터페이스 구조는 다음과 같다.
+    - extract(T item): 객체에서 배열 형태로 필드 값을 반환한다.
+
+2단계: LineAggregator (문자열 결합)
+- LineAggregator 인터페이스는 FieldExtractor가 추출한 배열 데이터를 하나의 문자열로 결합하는 기능을 한다.
+- CSV, 탭 구분자 등 구분자 기반 형식이나 고정 길이 형식 등 원하는 포맷으로 문자열을 만들 수 있다.
+- 대표적인 구현체로 DelimitedLineAggregator (구분자 기반)와 FormatterLineAggregator (포맷 기반), PassThroughLineAggregator (입력 객체를 그대로 문자열로 출력) 등이 있다.
+- 인터페이스 구조는 다음과 같다.
+    - aggregate(T item): 객체 데이터를 받아 문자열로 반환한다.
+
+--------------------------------------------------------
+FlatFileItemWriter 동작 방식
+- 객체를 FieldExtractor에 넘겨 필드 배열을 추출한다.
+- 그 배열을 LineAggregator에 넘겨 한 줄의 문자열로 결합한다.
+- 결합된 문자열을 파일에 쓴다.
+
+--------------------------------------------------------
+코드 예시
+1) FieldExtractor 인터페이스 및 구현 예시 (DeathNote 객체용)
+- 인터페이스:  
+  public interface FieldExtractor<T> {  
+  Object[] extract(T item);  
+  }
+- 구현체 예:  
+  public class DeathNoteFieldExtractor implements FieldExtractor<DeathNote> {  
+  @Override  
+  public Object[] extract(DeathNote deathNote) {  
+  return new Object[]{deathNote.getName(), deathNote.getCauseOfDeath()};  
+  }  
+  }
+
+2) LineAggregator 인터페이스 예시
+- 인터페이스:  
+  public interface LineAggregator<T> {  
+  String aggregate(T item);  
+  }
+
+3) FlatFileItemWriter 설정 간단 예시
+- Java 코드 예:  
+  FlatFileItemWriterBuilder<User> builder = new FlatFileItemWriterBuilder<User>()  
+  .name("userWriter")  
+  .resource(new FileSystemResource("output.csv"))  
+  .lineAggregator(new DelimitedLineAggregator<>()) // 예: 콤마(,) 구분자 사용  
+  .build();
+
+--------------------------------------------------------
+요약
+- FlatFileItemWriter는 도메인 객체 데이터를 플랫 파일로 쉽게 쓰게 해주는 Spring Batch 컴포넌트다.
+- 데이터 추출은 FieldExtractor가, 문자열 결합은 LineAggregator가 각각 담당한다.
+- 다양한 구현체를 통해 원하는 파일 포맷(CSV, 고정 길이 등) 지원 가능하다.  
+
