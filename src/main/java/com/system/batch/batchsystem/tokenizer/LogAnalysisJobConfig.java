@@ -1,4 +1,4 @@
-package tokenizer;
+package com.system.batch.batchsystem.tokenizer;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;

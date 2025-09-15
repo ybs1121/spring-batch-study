@@ -10,10 +10,10 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class SampleJobConfiguration {
     @Bean
-    public Job systemMonitoringJob(JobRepository jobRepository, Step monitoringStep) {
+    public Job systemMonitoringJob(JobRepository jobRepository, Step helloWorldStep) {
         return new JobBuilder("systemMonitoringJob", jobRepository)
                 .listener(new BigBrotherJobExecutionListener())
-                .start(monitoringStep)
+                .start(helloWorldStep)
                 .build();
     }
 }

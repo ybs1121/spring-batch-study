@@ -27,7 +27,9 @@ dependencies {
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
     annotationProcessor 'org.projectlombok:lombok'
     testAnnotationProcessor 'org.projectlombok:lombok'
-    runtimeOnly 'com.h2database:h2'
+//    runtimeOnly 'com.h2database:h2'
+    runtimeOnly 'org.postgresql:postgresql'  //
+
 }
 
 tasks.named('test') {
