@@ -502,3 +502,42 @@ FlatFileItemWriter 동작 방식
 두 가지 전략 중 선택은 사용 환경에 따라 다르며,  
 커넥션 유지 시간이 문제되면 Paging 방식,  
 메모리 여유가 있고 스트리밍 성능을 원하면 Cursor 방식을 권장합니다.
+
+
+# Spring Batch JdbcPagingItemReader & JdbcBatchItemWriter 정리
+
+### JdbcPagingItemReader: 데이터를 페이지 단위로 안전하게 읽기
+- 대량의 데이터를 메모리에 모두 로드하지 않고 **페이지 단위**로 나누어 읽는다.
+- 내부적으로 **Keyset 기반 페이징**을 수행한다. 즉, 이전 페이지의 마지막 키값을 기준으로 다음 데이터를 가져온다.
+- 구성 요소
+    - DataSource: Spring Boot yml 설정 기반 자동 매핑
+    - RowMapper: 기본 구현체로 `BeanPropertyRowMapper` 사용
+    - NamedParameterJdbcTemplate: SQL 실행 담당
+    - PagingQueryProvider: Keyset 기반 페이징 쿼리 생성
+
+예시 설정:
+@Bean  
+public JdbcPagingItemReader<Victim> terminatedVictimReader() {  
+return new JdbcPagingItemReaderBuilder<Victim>()  
+.name("terminatedVictimReader")  
+.dataSource(dataSource)  
+.pageSize(5)  
+.selectClause("SELECT id, name, process_id, terminated_at, status")  
+.fromClause("FROM victims")  
+.whereClause("WHERE status = :status AND terminated_at <= :terminatedAt")  
+.sortKeys(Map.of("id", Order.ASCENDING))  
+.parameterValues(Map.of(  
+"status", "TERMINATED",  
+"terminatedAt", LocalDateTime.now()  
+))  
+.beanRowMapper(Victim.class)  
+.build();  
+}
+
+---
+
+### JdbcBatchItemWriter: 데이터베이스에 안전하고 효율적으로 쓰기
+- Spring Batch에서 가장 기본적인 RDBMS 쓰기 도구.
+- **NamedParameterJdbcTemplate**을 내부적으로 사용.
+- 청크 단위로 모아진 아이템들을 `JdbcTemplate.batchUpdate`로 일괄 저장한다.
+- MySQL, PostgreSQL 등의 드라이버 레벨에서 **Multi-Value INSERT** 형태로 최적화된다.  
